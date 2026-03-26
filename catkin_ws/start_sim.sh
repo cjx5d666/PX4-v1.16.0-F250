@@ -10,6 +10,7 @@ fi
 
 WS_PATH="${WS_PATH:-$HOME/catkin_ws}"
 AGENT_ENV="$WS_PATH/agent_env.sh"
+WINDOW_HELPER="$WS_PATH/guest_gnome_windowctl.py"
 
 if [ -d "$PX4_PATH/Tools/simulation/gazebo-classic/sitl_gazebo-classic" ]; then
   SDF_PATH="$PX4_PATH/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf"
@@ -69,8 +70,33 @@ wait_for_file() {
   done
 }
 
+arrange_presentation_windows() {
+  if [ ! -f "$WINDOW_HELPER" ]; then
+    echo "[WARN] Missing window helper: $WINDOW_HELPER"
+    return 0
+  fi
+
+  (
+    export DISPLAY="${DISPLAY:-:0}"
+    export XAUTHORITY="${XAUTHORITY:-$HOME/.Xauthority}"
+    export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/1000/bus}"
+
+    python3 "$WINDOW_HELPER" wait "Gazebo" --timeout 180 >/dev/null 2>&1 || exit 0
+    python3 "$WINDOW_HELPER" wait "rviz" --timeout 180 >/dev/null 2>&1 || exit 0
+
+    # RViz may show an informational popup that blocks the final layout.
+    sleep 2
+    python3 "$WINDOW_HELPER" close "ROS 1 End-of-Life" >/dev/null 2>&1 || true
+    sleep 1
+
+    python3 "$WINDOW_HELPER" tile "Gazebo" --half left >/dev/null 2>&1 || true
+    python3 "$WINDOW_HELPER" tile "rviz" --half right >/dev/null 2>&1 || true
+  ) &
+}
+
 launch_auto_takeoff_hold() {
   echo "阶段 2/4: 自动起飞并保持到 ${TARGET_TAKEOFF_Z}m"
+  mkdir -p "$AUTO_STATE_DIR"
   cat <<PY | nohup python3 - > "$AUTO_LOG_FILE" 2>&1 &
 import os
 import rospy
@@ -81,6 +107,7 @@ from mavros_msgs.srv import CommandBool, SetMode
 TARGET_Z = float(${TARGET_TAKEOFF_Z})
 READY_FILE = os.path.expanduser('${AUTO_READY_FILE}')
 RELEASE_FILE = os.path.expanduser('${AUTO_RELEASE_FILE}')
+os.makedirs(os.path.dirname(READY_FILE), exist_ok=True)
 
 state = State()
 pose = None
@@ -198,6 +225,8 @@ sleep 2;
 roslaunch ego_planner px4_single.launch;
 exit"
 
+arrange_presentation_windows
+
 wait_for_topic "/cloud_corrected" 60 || true
 wait_for_topic "/planning/pos_cmd" 60 || true
 wait_for_topic "/waypoint_generator/waypoints" 60 || true
@@ -210,5 +239,6 @@ source '$AGENT_ENV';
 python3 $WS_PATH/mission_manager.py;
 exit"
 
+mkdir -p "$AUTO_STATE_DIR"
 touch "$AUTO_RELEASE_FILE"
 echo "自动起飞保持器已释放，现由 bridge/planner 接管。"

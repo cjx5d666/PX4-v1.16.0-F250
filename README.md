@@ -1,588 +1,379 @@
-# PX4 `v1.16.0` 公开 README 补丁说明
+# PX4 `v1.16.0` 迁移实操教程
 
-这份文档是给“从旧 GitHub 环境继续复现到当前可运行环境”的人看的中文说明。
-如果🚫不需要深入了解，只想快速升级仿真环境的话，请直接看- `QuickRead.md`
+这份 README 不是概念说明，而是一份按顺序执行的实际教程。
 
-它不是通用 PX4 升级教程，而是基于原始项目仓库：
+默认前提只有一个：
 
-- `cjx5d666/PX4-Gazebo-Egoplanner`
+- 你已经按旧 GitHub 基线把原项目环境搭起来了
+- 旧基线参考仓库是：
+  - `cjx5d666/PX4-Gazebo-Egoplanner`
 
-在当前这套环境里实际做过的迁移、换参、启动链修补、深度相机保留和 Gazebo 外壳重构记录。
+这份补丁包的作用不是替代旧仓库，而是告诉你：
 
-目标是回答下面这些最实际的问题：
+1. 先保留旧环境
+2. 再单独下载 `PX4 v1.16.0`
+3. 然后把这个补丁包里的文件复制到正确位置
+4. 最后构建和验证
 
-1. 旧环境到底以什么为基线
-2. 为什么要单独上 `PX4 v1.16.0`
-3. 从旧环境迁到 `v1.16.0` 具体要改哪些文件
-4. 机体模型、深度相机、控制分配参数分别落在哪些文件
-5. 哪些文件可以直接复制，复制到哪里
-6. 怎么验证现在这套主链是真的跑通了
+如果你只是想“不要动脑子，直接照着做”，就从下面的 Step 0 开始。
 
-## 一、先讲清楚当前环境形态
+## Overview
 
-这不是一个“单仓库、单命令”的普通项目。
+迁移后的目标状态是：
 
-当前实际运行环境分成三块：
+- 旧 PX4 树保留：
+  - `/home/adminpc/PX4-Autopilot`
+- 新 PX4 树新建：
+  - `/home/adminpc/PX4-Autopilot-v1.16.0`
+- catkin 工作区仍然是：
+  - `/home/adminpc/catkin_ws`
 
-### 1. PX4 主树
+这个补丁包里已经放好了三类文件：
 
-旧树保留在：
+1. `px4_patch/`
+   - 要复制到 `PX4-Autopilot-v1.16.0` 里的文件
+2. `catkin_ws/`
+   - 要复制到 `/home/adminpc/catkin_ws` 里的主链和环境文件
+3. `tracking/`
+   - 后续做原生跟踪实验时要复制到 `/home/adminpc/catkin_ws` 里的文件
 
-```bash
-/home/adminpc/PX4-Autopilot
-```
+当前这份补丁包里包含的 `iris.sdf.jinja` 和 `iris_depth_camera.sdf` 已经是最新主线版本：
 
-当前主运行树在：
+- 已带当前定版动力学参数
+- 已带当前 Gazebo 外壳视觉重构
+- 外壳改动是 `visual-only`
+- 不改物理碰撞体和动力学
 
-```bash
-/home/adminpc/PX4-Autopilot-v1.16.0
-```
+## Files
 
-### 2. catkin 工作区
+### 这份补丁包里实际包含的文件
 
-```bash
-/home/adminpc/catkin_ws
-```
+#### `px4_patch/`
 
-里面放的是：
+- `launch/mavros_posix_sitl.launch`
+- `ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris`
+- `Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja`
+- `Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf`
+- `Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config`
 
+#### `catkin_ws/`
+
+- `agent_env.sh`
 - `start_sim.sh`
 - `start_sim_agent.sh`
 - `stop_sim.sh`
-- `agent_env.sh`
 - `check_env.sh`
+- `guest_gnome_windowctl.py`
 - `px4_bridge.py`
 - `fix_cloud.py`
 - `mission_manager.py`
 - `obstacle_manager.py`
-- 跟踪实验脚本
+- `src/ego-planner/src/planner/plan_manage/launch/px4_single.launch`
+- `src/ego-planner/src/planner/plan_manage/launch/default.rviz`
 
-### 3. Ego-Planner 工程
+#### `tracking/`
 
-```bash
-/home/adminpc/catkin_ws/src/ego-planner
-```
+- `start_tracking_stack.sh`
+- `run_tracking_suite.sh`
+- `tracking_test_runner.py`
+- `tracking_analysis.py`
 
-所以整个系统真正跑起来时，实际是：
+### 这份补丁包默认不重复提供的旧基线内容
 
-- PX4 SITL
-- Gazebo Classic
-- MAVROS
-- 深度相机模型
-- 点云修正链
-- PX4 bridge
-- Ego-Planner
-- mission manager
+下面这些内容默认还是来自旧 GitHub 基线环境本身，不在这个补丁包里重复放：
 
-一起构成的一条链。
+- Ego-Planner 主体源码
 
-## 二、旧 GitHub 环境到底是什么基线
+所以本教程默认你已经有一套旧基线工作区，并且这些文件已经存在于：
 
-当前复现的原始参考不是官方 PX4 README，而是：
+- `/home/adminpc/catkin_ws`
 
-- `https://github.com/cjx5d666/PX4-Gazebo-Egoplanner`
+## Steps
 
-应该把它理解成：
+## Step 0. 先确认你手里已经有旧基线
 
-- 这是原始人类配置好的旧环境参考
-- 当前这套能跑的系统，是在它的基础上继续做了本地迁移和修补
-
-也就是说，公开 README 里如果要写“起点”，应该先承认：
-
-1. 原始环境是 PX4 老版本路径组织
-2. 原始 Gazebo 模型路径还是 `Tools/sitl_gazebo`
-3. 当前公开补丁不是重新发明一套新系统
-4. 而是把那套旧环境迁到了 `PX4 v1.16.0`
-
-## 三、这次迁移为什么不是直接覆盖旧树
-
-不要在：
+先确认这几个路径存在：
 
 ```bash
-/home/adminpc/PX4-Autopilot
+ls /home/adminpc/PX4-Autopilot
+ls /home/adminpc/catkin_ws
+ls /home/adminpc/catkin_ws/src/ego-planner
 ```
 
-上原地升级。
+如果这些都存在，说明你已经有旧 GitHub 环境，可以继续。
 
-这次实际采用的是“双树并存”策略：
+如果这些都不存在，不要直接跳过，你应该先按旧仓库 README 把旧基线搭起来，再回来做这份补丁。
 
-- 旧树继续保留：
-  - `/home/adminpc/PX4-Autopilot`
-- 新树单独新建：
-  - `/home/adminpc/PX4-Autopilot-v1.16.0`
+## Step 1. 把这个补丁包仓库放到本机
 
-这么做的原因很简单：
-
-1. 一旦迁移失败，可以立刻回看旧树差异
-2. 不会把原来还能跑的基线直接毁掉
-3. 可以把“迁移问题”和“旧项目本身问题”分开排查
-
-这一步是整个迁移里最重要的策略选择之一。
-
-## 四、从旧 PX4 到 `v1.16.0`，目录上哪些地方变了
-
-### 1. PX4 树路径变了
-
-旧：
+假设你把这个补丁包仓库克隆到：
 
 ```bash
-/home/adminpc/PX4-Autopilot
+/home/adminpc/px4-v1.16-patch-bundle
 ```
 
-新：
+后面所有命令都按这个路径写。
+
+先定义几个变量，后面直接复制命令时不容易出错：
 
 ```bash
-/home/adminpc/PX4-Autopilot-v1.16.0
+PATCH_ROOT=/home/adminpc/px4-v1.16-patch-bundle
+OLD_PX4=/home/adminpc/PX4-Autopilot
+NEW_PX4=/home/adminpc/PX4-Autopilot-v1.16.0
+WS=/home/adminpc/catkin_ws
 ```
 
-### 2. Gazebo Classic 路径变了
+## Step 2. 下载官方 `PX4 v1.16.0`
 
-旧：
-
-```bash
-/home/adminpc/PX4-Autopilot/Tools/sitl_gazebo
-/home/adminpc/PX4-Autopilot/Tools/setup_gazebo.bash
-```
-
-新：
-
-```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/setup_gazebo.bash
-```
-
-### 3. Airframe 入口语义变了
-
-旧环境经常直接碰的是：
-
-```bash
-ROMFS/px4fmu_common/init.d-posix/airframes/10016_iris
-```
-
-现在 `v1.16.0` Gazebo Classic 这一侧，核心目标变成：
-
-```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris
-/home/adminpc/PX4-Autopilot-v1.16.0/ROMFS/px4fmu_common/init.d-posix/airframes/1015_gazebo-classic_iris_depth_camera
-```
-
-不能再机械沿用旧文件名。
-
-## 五、这次迁移实际改了哪些文件
-
-### 1. PX4 树内必须改的文件
-
-```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/launch/mavros_posix_sitl.launch
-/home/adminpc/PX4-Autopilot-v1.16.0/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config
-```
-
-### 2. catkin 工作区里必须跟着改的文件
-
-```bash
-/home/adminpc/catkin_ws/agent_env.sh
-/home/adminpc/catkin_ws/start_sim_agent.sh
-/home/adminpc/catkin_ws/start_sim.sh
-/home/adminpc/catkin_ws/stop_sim.sh
-/home/adminpc/catkin_ws/check_env.sh
-/home/adminpc/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch
-```
-
-### 3. shell 默认环境文件
-
-```bash
-/home/adminpc/.bashrc
-```
-
-## 六、推荐的实际迁移步骤
-
-下面这套顺序是按“真的做过、也踩过坑”的顺序整理的。
-
-### Step 1. 新建 `v1.16.0` 独立工作树
+不要覆盖旧树，直接新建一棵：
 
 ```bash
 cd /home/adminpc
 git clone --recursive --branch v1.16.0 --depth 1 --shallow-submodules \
   https://github.com/PX4/PX4-Autopilot.git PX4-Autopilot-v1.16.0
+```
 
+然后进入新树：
+
+```bash
 cd /home/adminpc/PX4-Autopilot-v1.16.0
 git switch -c codex/px4-v1.16-migration
 ```
 
-### Step 2. 先补齐 shallow clone 缺失的 tag/history
+## Step 3. 先补齐 shallow clone 缺失的 tag/history
 
-这是这次迁移里的第一个构建坑。
+这一步不要省。
 
-如果直接构建，可能会在 `px_update_git_header.py` 上炸掉，原因是 NuttX 子模块历史太浅。
+如果不做，后面构建很可能会在 `px_update_git_header.py` 或 NuttX 版本头生成上报错。
 
-执行：
+照着执行：
 
 ```bash
-cd /home/adminpc/PX4-Autopilot-v1.16.0
+cd $NEW_PX4
 git fetch --tags --unshallow || git fetch --tags
 
-cd /home/adminpc/PX4-Autopilot-v1.16.0/platforms/nuttx/NuttX/nuttx
+cd $NEW_PX4/platforms/nuttx/NuttX/nuttx
 git fetch --tags --unshallow || git fetch --tags
 
-cd /home/adminpc/PX4-Autopilot-v1.16.0/platforms/nuttx/NuttX/apps
+cd $NEW_PX4/platforms/nuttx/NuttX/apps
 git fetch --tags --unshallow || git fetch --tags
 ```
 
-### Step 3. 先把旧树里的模型和相机文件迁过来
+## Step 4. 把补丁包里的 PX4 文件复制到 `v1.16.0` 新树
 
-如果你已经在旧环境里有一套可用的魔改模型，最省事的办法不是重写，而是直接复制。
-
-```bash
-cp /home/adminpc/PX4-Autopilot/Tools/sitl_gazebo/models/iris/iris.sdf.jinja \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja
-
-cp /home/adminpc/PX4-Autopilot/Tools/sitl_gazebo/models/iris_depth_camera/iris_depth_camera.sdf \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
-
-cp /home/adminpc/PX4-Autopilot/Tools/sitl_gazebo/models/iris_depth_camera/model.config \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config
-```
-
-### Step 4. 再改 `mavros_posix_sitl.launch`
-
-目标文件：
+先确保目标目录存在：
 
 ```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/launch/mavros_posix_sitl.launch
+mkdir -p $NEW_PX4/launch
+mkdir -p $NEW_PX4/ROMFS/px4fmu_common/init.d-posix/airframes
+mkdir -p $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris
+mkdir -p $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera
 ```
 
-要把之前用过的 MAVROS local TF 参数补回去，至少应确保：
-
-```xml
-<group ns="mavros">
-  <param name="local_position/tf/send" value="true"/>
-  <param name="local_position/tf/frame_id" value="map"/>
-  <param name="local_position/tf/child_frame_id" value="base_link"/>
-  <param name="global_position/tf/send" value="false"/>
-</group>
-```
-
-### Step 5. 最关键的是 airframe / control allocation
-
-目标文件：
+然后直接复制：
 
 ```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris
+cp $PATCH_ROOT/px4_patch/launch/mavros_posix_sitl.launch \
+  $NEW_PX4/launch/mavros_posix_sitl.launch
+
+cp $PATCH_ROOT/px4_patch/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris \
+  $NEW_PX4/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris
+
+cp $PATCH_ROOT/px4_patch/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja \
+  $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja
+
+cp $PATCH_ROOT/px4_patch/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf \
+  $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
+
+cp $PATCH_ROOT/px4_patch/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config \
+  $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config
 ```
 
-这一步不能简单照抄 Gazebo 模型里的 rotor pose。
+到这里为止，`v1.16.0` 侧和模型相关的关键文件就已经替换好了。
 
-这次最终稳定可用的一组 control allocation 参数是：
+## Step 5. 把补丁包里的 catkin 工作区脚本复制到工作区
 
-```sh
-param set-default CA_ROTOR_COUNT 4
-param set-default CA_ROTOR0_PX 0.0884
-param set-default CA_ROTOR0_PY 0.0884
-param set-default CA_ROTOR0_KM 0.015652892561983472
-param set-default CA_ROTOR1_PX -0.0884
-param set-default CA_ROTOR1_PY -0.0884
-param set-default CA_ROTOR1_KM 0.015652892561983472
-param set-default CA_ROTOR2_PX 0.0884
-param set-default CA_ROTOR2_PY -0.0884
-param set-default CA_ROTOR2_KM -0.015652892561983472
-param set-default CA_ROTOR3_PX -0.0884
-param set-default CA_ROTOR3_PY 0.0884
-param set-default CA_ROTOR3_KM -0.015652892561983472
-```
-
-这一段非常重要，因为第一次迁移失败的核心坑就在这里：
-
-- Gazebo 模型里的 `y`
-- 不能直接原封不动抄进 PX4 `v1.16.0` 的 control allocation
-
-PX4 这一侧按自己的坐标语义解释参数，尤其 `PY` 要按 PX4 这边的约定来。
-
-## 七、当前机体模型和参数文件到底怎么分工
-
-这是最容易让后面接手的人搞混的地方。
-
-### 1. 当前动力学参数主文件
-
-项目侧主记录文件是：
+先确保 planner launch 的目标目录存在：
 
 ```bash
-/home/adminpc/catkin_ws/iris.sdf.jinja
+mkdir -p $WS/src/ego-planner/src/planner/plan_manage/launch
 ```
 
-这里保存的是当前定版的机体参数检查点。
-
-### 2. 当前 Gazebo 运行时实际加载的文件
-
-真正运行时生效的不是上面这份 catkin 文件，而是 PX4 `v1.16.0` 树里的：
+然后直接复制：
 
 ```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
+cp $PATCH_ROOT/catkin_ws/agent_env.sh $WS/agent_env.sh
+cp $PATCH_ROOT/catkin_ws/start_sim.sh $WS/start_sim.sh
+cp $PATCH_ROOT/catkin_ws/start_sim_agent.sh $WS/start_sim_agent.sh
+cp $PATCH_ROOT/catkin_ws/stop_sim.sh $WS/stop_sim.sh
+cp $PATCH_ROOT/catkin_ws/check_env.sh $WS/check_env.sh
+cp $PATCH_ROOT/catkin_ws/guest_gnome_windowctl.py $WS/guest_gnome_windowctl.py
+cp $PATCH_ROOT/catkin_ws/px4_bridge.py $WS/px4_bridge.py
+cp $PATCH_ROOT/catkin_ws/fix_cloud.py $WS/fix_cloud.py
+cp $PATCH_ROOT/catkin_ws/mission_manager.py $WS/mission_manager.py
+cp $PATCH_ROOT/catkin_ws/obstacle_manager.py $WS/obstacle_manager.py
+
+cp $PATCH_ROOT/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch \
+  $WS/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch
+
+cp $PATCH_ROOT/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/default.rviz \
+  $WS/src/ego-planner/src/planner/plan_manage/launch/default.rviz
 ```
 
-换句话说：
+这一步完成后，新的环境脚本和启动脚本就进入工作区了。
 
-- `catkin_ws/iris.sdf.jinja` 更像项目侧记录和主检查点
-- PX4 `v1.16.0` 树里的模型文件才是 Gazebo 运行时真正吃到的版本
+## Step 6. 如果要做原生跟踪实验，再复制 tracking 脚本
 
-如果 README 不把这点写清楚，后面最容易出现的误判就是：
+如果你暂时只想跑主链，这一步可以先跳过。
 
-- “我明明改了文件，为什么 Gazebo 没变”
-
-## 八、这次定版的关键参数值
-
-### 1. 机体惯量和质量
-
-当前关键值：
-
-```xml
-<mass>0.70</mass>
-<ixx>0.003164</ixx>
-<iyy>0.003164</iyy>
-<izz>0.006044</izz>
-```
-
-### 2. 旋翼几何
-
-当前关键值：
-
-```text
-rotor arm radius = 0.0884
-rotor collision radius = 0.0635
-```
-
-### 3. 电机模型
-
-当前关键值：
-
-```xml
-<timeConstantUp>0.0081</timeConstantUp>
-<timeConstantDown>0.0081</timeConstantDown>
-<maxRotVelocity>2237.54</maxRotVelocity>
-<motorConstant>1.815e-06</motorConstant>
-<momentConstant>0.015652892561983472</momentConstant>
-```
-
-### 4. 控制通道映射
-
-当前关键值：
-
-```xml
-<input_scaling>1913.76</input_scaling>
-<zero_position_armed>323.78</zero_position_armed>
-```
-
-## 九、深度相机这一侧到底保留了什么
-
-当前 depth camera 的真实挂点没有动，仍然在：
+如果你后面还想做原生跟踪实验，把下面几个文件也复制进去：
 
 ```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
+cp $PATCH_ROOT/tracking/start_tracking_stack.sh $WS/start_tracking_stack.sh
+cp $PATCH_ROOT/tracking/run_tracking_suite.sh $WS/run_tracking_suite.sh
+cp $PATCH_ROOT/tracking/tracking_test_runner.py $WS/tracking_test_runner.py
+cp $PATCH_ROOT/tracking/tracking_analysis.py $WS/tracking_analysis.py
 ```
 
-关键 pose 仍然是：
+## Step 7. 把从 Windows/GitHub 下来的脚本统一转成 LF
 
-```xml
-<pose>0.1 0 0 0 0 0</pose>
-```
+这一步非常重要，不要省。
 
-这一点必须写进 README，因为这是和规划、点云、相机前向视场强相关的固定约束。
+如果这些文件带 `CRLF`，可能会出现：
 
-## 十、启动脚本和环境脚本必须怎么改
+- `ROS_PACKAGE_PATH` 污染
+- `rospack` 找包失败
+- shell 脚本行为异常
 
-这一部分建议写成“如果你已经有一套旧 catkin 工作区，直接把当前写好的脚本替换过去”。
-
-### 1. 直接复制这些脚本到 catkin 工作区
-
-```bash
-/home/adminpc/catkin_ws/agent_env.sh
-/home/adminpc/catkin_ws/start_sim_agent.sh
-/home/adminpc/catkin_ws/start_sim.sh
-/home/adminpc/catkin_ws/stop_sim.sh
-/home/adminpc/catkin_ws/check_env.sh
-```
-
-这些脚本里已经处理好了：
-
-1. 优先使用 `/home/adminpc/PX4-Autopilot-v1.16.0`
-2. 新 Gazebo Classic 路径
-3. GUI 可见四阶段启动
-4. 远端 agent 启动
-5. `--only-arm` / `--arm-offboard`
-6. 清理逻辑
-
-### 2. planner launch 也要一起替换
-
-```bash
-/home/adminpc/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch
-```
-
-当前版本支持：
-
-```xml
-<arg name="enable_rviz" default="true"/>
-```
-
-这样远端启动时可以：
-
-```bash
-roslaunch ego_planner px4_single.launch enable_rviz:=false
-```
-
-### 3. `.bashrc` 也要顺手更新
-
-目标是：
-
-1. 如果新树存在，默认指向 `PX4-Autopilot-v1.16.0`
-2. 如果新树不存在，再回退到旧树
-3. 新树时使用：
-   - `Tools/simulation/gazebo-classic/setup_gazebo.bash`
-
-## 十一、如果不想手工一行一行改，哪些文件可以直接复制
-
-这是 README 里最有用的一节。
-
-### PX4 树内可直接复制覆盖的文件
-
-如果你已经拿到了当前可运行环境中的文件，可以直接复制：
-
-```bash
-cp <当前可运行环境>/launch/mavros_posix_sitl.launch \
-  /home/adminpc/PX4-Autopilot-v1.16.0/launch/mavros_posix_sitl.launch
-
-cp <当前可运行环境>/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris \
-  /home/adminpc/PX4-Autopilot-v1.16.0/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris
-
-cp <当前可运行环境>/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja
-
-cp <当前可运行环境>/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
-
-cp <当前可运行环境>/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config
-```
-
-### catkin 工作区可直接复制覆盖的文件
-
-```bash
-cp <当前可运行环境>/catkin_ws/agent_env.sh /home/adminpc/catkin_ws/agent_env.sh
-cp <当前可运行环境>/catkin_ws/start_sim_agent.sh /home/adminpc/catkin_ws/start_sim_agent.sh
-cp <当前可运行环境>/catkin_ws/start_sim.sh /home/adminpc/catkin_ws/start_sim.sh
-cp <当前可运行环境>/catkin_ws/stop_sim.sh /home/adminpc/catkin_ws/stop_sim.sh
-cp <当前可运行环境>/catkin_ws/check_env.sh /home/adminpc/catkin_ws/check_env.sh
-cp <当前可运行环境>/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch \
-  /home/adminpc/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch
-```
-
-复制完成后记得：
+直接执行：
 
 ```bash
 perl -0pi -e 's/\r\n/\n/g' \
-  /home/adminpc/PX4-Autopilot-v1.16.0/launch/mavros_posix_sitl.launch \
-  /home/adminpc/PX4-Autopilot-v1.16.0/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf \
-  /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config \
-  /home/adminpc/catkin_ws/agent_env.sh \
-  /home/adminpc/catkin_ws/start_sim_agent.sh \
-  /home/adminpc/catkin_ws/start_sim.sh \
-  /home/adminpc/catkin_ws/stop_sim.sh \
-  /home/adminpc/catkin_ws/check_env.sh
+  $NEW_PX4/launch/mavros_posix_sitl.launch \
+  $NEW_PX4/ROMFS/px4fmu_common/init.d-posix/airframes/10015_gazebo-classic_iris \
+  $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja \
+  $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf \
+  $NEW_PX4/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/model.config \
+  $WS/agent_env.sh \
+  $WS/start_sim.sh \
+  $WS/start_sim_agent.sh \
+  $WS/stop_sim.sh \
+  $WS/check_env.sh \
+  $WS/guest_gnome_windowctl.py \
+  $WS/px4_bridge.py \
+  $WS/fix_cloud.py \
+  $WS/mission_manager.py \
+  $WS/obstacle_manager.py \
+  $WS/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch \
+  $WS/src/ego-planner/src/planner/plan_manage/launch/default.rviz
+```
 
+如果你复制了 tracking 脚本，也一并转掉：
+
+```bash
+perl -0pi -e 's/\r\n/\n/g' \
+  $WS/start_tracking_stack.sh \
+  $WS/run_tracking_suite.sh \
+  $WS/tracking_test_runner.py \
+  $WS/tracking_analysis.py
+```
+
+## Step 8. 给工作区脚本加执行权限
+
+```bash
 chmod +x \
-  /home/adminpc/catkin_ws/agent_env.sh \
-  /home/adminpc/catkin_ws/start_sim_agent.sh \
-  /home/adminpc/catkin_ws/start_sim.sh \
-  /home/adminpc/catkin_ws/stop_sim.sh \
-  /home/adminpc/catkin_ws/check_env.sh
+  $WS/agent_env.sh \
+  $WS/start_sim.sh \
+  $WS/start_sim_agent.sh \
+  $WS/stop_sim.sh \
+  $WS/check_env.sh \
+  $WS/guest_gnome_windowctl.py
 ```
 
-## 十二、构建时的两个真实坑
-
-### 坑 1：shallow clone 历史不够
-
-现象：
-
-- `px_update_git_header.py`
-- 或 NuttX 相关版本头生成报错
-
-处理：
-
-- 回去执行 `git fetch --tags --unshallow || git fetch --tags`
-
-### 坑 2：手工生成过 `iris.sdf`
-
-现象：
-
-- 构建时报 `generation would overwrite changes to iris.sdf`
-
-原因：
-
-- 你把生成物 `iris.sdf` 当成长期编辑文件了
-
-处理：
+如果你复制了 tracking 脚本，再执行：
 
 ```bash
-rm -f /home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf
+chmod +x \
+  $WS/start_tracking_stack.sh \
+  $WS/run_tracking_suite.sh
 ```
 
-然后重新构建。
-
-## 十三、构建命令
+## Step 9. 构建 `PX4 v1.16.0`
 
 ```bash
-cd /home/adminpc/PX4-Autopilot-v1.16.0
+cd $NEW_PX4
 DONT_RUN=1 make px4_sitl gazebo-classic_iris_depth_camera -j"$(nproc)"
 ```
 
-## 十四、验证应该怎么分层做
+如果构建通过，说明 `v1.16.0` 新树至少在编译层面是通的。
+
+## Step 10. 如果你想让默认 shell 也优先走 `v1.16.0`
+
+这一步不是必须的，因为 `agent_env.sh` 已经会优先使用新树。
+
+但如果你希望登录 shell 也默认走 `v1.16.0`，可以在 `~/.bashrc` 里按下面逻辑配置：
+
+```bash
+if [ -d "$HOME/PX4-Autopilot-v1.16.0" ]; then
+  export PX4_DIR="$HOME/PX4-Autopilot-v1.16.0"
+else
+  export PX4_DIR="$HOME/PX4-Autopilot"
+fi
+```
+
+然后如果是 `v1.16.0`，要确保走的是：
+
+```bash
+$PX4_DIR/Tools/simulation/gazebo-classic/setup_gazebo.bash
+```
+
+## Validation
 
 不要一上来就跑完整 planner 主链。
 
-推荐按三层验证：
+最稳的办法是按下面三层验证。
 
-### 第一层：最小无 planner 验证
+## 第一层验证：最小无 planner 验证
 
-目标：
+目的：
 
-- 只看 PX4 + Gazebo + MAVROS 能不能稳定飞起来
+- 只验证 PX4 + Gazebo + MAVROS 是不是能稳定起来
+- 先把 planner 排除掉
 
-这样可以先确认：
-
-- 问题是不是 planner 引入的
-
-### 第二层：agent 主链验证
+如果你已经复制了 tracking 脚本，可以这样跑：
 
 ```bash
-cd /home/adminpc/catkin_ws
+cd $WS
+./stop_sim.sh
+./start_tracking_stack.sh --gui
+```
+
+这一层通过，说明最基础的飞行模型和启动链已经没问题。
+
+## 第二层验证：agent 主链验证
+
+```bash
+cd $WS
 ./stop_sim.sh
 ./start_sim_agent.sh
 ./start_sim_agent.sh --only-arm
 ```
 
-检查：
-
-- `/mavros/state`
-- `/cloud_corrected`
-- `/planning/pos_cmd`
-- `/waypoint_generator/waypoints`
-- `/depth_camera/points`
-
-### 第三层：GUI 主链验证
+然后检查：
 
 ```bash
-cd /home/adminpc/catkin_ws
+rostopic list | grep -E '/mavros/state|/cloud_corrected|/planning/pos_cmd|/waypoint_generator/waypoints|/depth_camera/points'
+```
+
+## 第三层验证：GUI 主链验证
+
+```bash
+cd $WS
 ./stop_sim.sh
 ./start_sim.sh
 ```
 
-预期会看到四阶段反馈：
+正常情况下应该能看到四阶段反馈：
 
 ```text
 正在启动魔改自主导航仿真系统...
@@ -593,82 +384,57 @@ cd /home/adminpc/catkin_ws
 自动起飞保持器已释放，现由 bridge/planner 接管。
 ```
 
-## 十五、Gazebo 外壳这块后来又改了什么
+当前 `start_sim.sh` 还有两个已经并入的 GUI 展示修补：
 
-这部分属于迁移完成后的“视觉重构补丁”，也应该顺手写到 README 里。
+1. 自动起飞阶段的状态目录会被再次创建
+   - 否则 `~/.cache/px4_auto/auto_takeoff.pid` 可能报目录不存在
+   - 进而导致 `hover_ready.flag` 等不到
+2. 当 `Gazebo` 和 `RViz` 都起来后，会自动：
+   - 关闭 RViz 的 `ROS 1 End-of-Life` 弹窗
+   - 把 `Gazebo` 摆到左半屏
+   - 把 `RViz` 摆到右半屏
 
-当前外壳视觉已经不是 stock Iris 外壳。
+另外，当前补丁包也把 `default.rviz` 一起带上了：
 
-实际改动位置是：
+- `RViz` 默认视角会和当前主线一致
+- 当前配置是：
+  - `ThirdPersonFollower`
+  - `Target Frame: base_link`
+
+如果这一层也通过，说明：
+
+- `PX4 v1.16.0` 迁移成功
+- 当前机体参数可用
+- 深度相机链可用
+- 主启动链可用
+
+## Pitfalls
+
+### 1. 不要原地覆盖旧 PX4 树
+
+旧树必须保留：
 
 ```bash
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf
-/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
-/home/adminpc/catkin_ws/iris.sdf.jinja
+/home/adminpc/PX4-Autopilot
 ```
 
-这次外壳重构只改了 `visual`，没有改这些东西：
+新树单独新建：
 
-- `collision`
-- `inertial`
-- `mass`
-- `inertia`
-- rotor `pose`
-- joint
-- depth camera 真实挂点 pose
+```bash
+/home/adminpc/PX4-Autopilot-v1.16.0
+```
 
-也就是说：
+### 2. 不要继续使用旧 `Tools/sitl_gazebo` 路径
 
-- 它只影响“看起来像什么”
-- 不直接改变物理碰撞体
-- 不直接改变动力学
-
-视觉上做的事情主要包括：
-
-- 放大中心机身和上层堆叠
-- 加粗加长机臂
-- 加大 motor pod
-- 让机头更前伸
-- 补出前部相机安装桥和护架
-- 把深度相机外观做得更像相机模组
-
-这一段如果 README 不写，后面别人会误以为“换壳”会改变物理碰撞。
-
-## 十六、当前最容易踩的坑
-
-### 1. 旧 `Tools/sitl_gazebo` 路径不能继续写死
-
-到了 `v1.16.0`，Gazebo Classic 已经在：
+`v1.16.0` 里 Gazebo Classic 已经迁到：
 
 ```bash
 Tools/simulation/gazebo-classic/sitl_gazebo-classic
 ```
 
-### 2. `catkin_ws/iris.sdf.jinja` 不是运行时唯一来源
+### 3. 不要把 `iris.sdf` 当长期编辑文件
 
-它是项目侧检查点，不是 Gazebo 唯一运行时入口。
-
-真正生效的，是 PX4 `v1.16.0` 树里的模型文件。
-
-### 3. GUI tab 必须继续用 `bash -ic`
-
-如果退回 `bash -c`，很容易重新遇到：
-
-- ROS 环境没加载
-- `rospy` 导入失败
-
-### 4. 从 Windows 写入的脚本一定要转 LF
-
-否则会出现：
-
-- `ROS_PACKAGE_PATH` 污染
-- `rospack` 查包异常
-- shell 脚本行为奇怪
-
-### 5. 不要把 `iris.sdf` 当长期手工编辑文件
-
-长期应该维护：
+长期维护的是：
 
 ```bash
 iris.sdf.jinja
@@ -680,39 +446,39 @@ iris.sdf.jinja
 iris.sdf
 ```
 
-## 十七、当前日常使用入口
+### 4. `CA_ROTOR*_PY` 不能直接照抄 Gazebo rotor pose
 
-### GUI 可见桌面流程
+这是这次迁移里最关键的坑之一。
 
-```bash
-cd /home/adminpc/catkin_ws
-./stop_sim.sh
-./start_sim.sh
-```
+PX4 `v1.16.0` 这边的 control allocation 参数有自己的坐标语义，不能直接把 Gazebo rotor `y` 原样搬过去。
 
-### 远端 / agent 流程
+### 5. `catkin_ws/iris.sdf.jinja` 不是 Gazebo 运行时唯一来源
+
+项目侧主记录文件是：
 
 ```bash
-cd /home/adminpc/catkin_ws
-./stop_sim.sh
-./start_sim_agent.sh
-./start_sim_agent.sh --only-arm
+/home/adminpc/catkin_ws/iris.sdf.jinja
 ```
 
-### 环境检查
+但 Gazebo 运行时实际生效的，仍然是 PX4 `v1.16.0` 树里的：
 
 ```bash
-cd /home/adminpc/catkin_ws
-./check_env.sh
+/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris/iris.sdf.jinja
+/home/adminpc/PX4-Autopilot-v1.16.0/Tools/simulation/gazebo-classic/sitl_gazebo-classic/models/iris_depth_camera/iris_depth_camera.sdf
 ```
 
-## 十八、一句话结论
+### 6. 当前外壳改动是 `visual-only`
 
-这次公开 README 最应该表达清楚的不是“版本号从旧版换成了 `1.16.0`”，而是：
+这次补丁包里的外壳重构只改了可视化外观，没有改：
 
-1. 旧 GitHub 环境是起点
-2. 当前采用“双 PX4 树并存”的迁移方式
-3. 关键是把机体模型、深度相机、control allocation、MAVROS launch 和 catkin 启动链一起迁到 `v1.16.0`
-4. 运行时真正生效的 Gazebo 模型在 PX4 `v1.16.0` 树里
-5. Gazebo 外壳后续做过一轮 `visual-only` 重构，但没有改动力学和碰撞
-6. 迁移成功要靠分层验证，而不是直接赌完整 planner 主链
+- `collision`
+- `mass`
+- `inertia`
+- rotor `pose`
+- depth camera 真实挂点
+
+所以：
+
+- 它会改变 Gazebo 里“看起来像什么”
+- 不会直接改变物理碰撞体
+- 不会直接重改动力学参数

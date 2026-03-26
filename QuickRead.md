@@ -68,6 +68,7 @@
 - `mission_manager.py`
 - `obstacle_manager.py`
 - `src/ego-planner/src/planner/plan_manage/launch/px4_single.launch`
+- `src/ego-planner/src/planner/plan_manage/launch/default.rviz`
 
 #### `tracking/`
 
@@ -205,6 +206,7 @@ cp $PATCH_ROOT/catkin_ws/start_sim.sh $WS/start_sim.sh
 cp $PATCH_ROOT/catkin_ws/start_sim_agent.sh $WS/start_sim_agent.sh
 cp $PATCH_ROOT/catkin_ws/stop_sim.sh $WS/stop_sim.sh
 cp $PATCH_ROOT/catkin_ws/check_env.sh $WS/check_env.sh
+cp $PATCH_ROOT/catkin_ws/guest_gnome_windowctl.py $WS/guest_gnome_windowctl.py
 cp $PATCH_ROOT/catkin_ws/px4_bridge.py $WS/px4_bridge.py
 cp $PATCH_ROOT/catkin_ws/fix_cloud.py $WS/fix_cloud.py
 cp $PATCH_ROOT/catkin_ws/mission_manager.py $WS/mission_manager.py
@@ -212,6 +214,9 @@ cp $PATCH_ROOT/catkin_ws/obstacle_manager.py $WS/obstacle_manager.py
 
 cp $PATCH_ROOT/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch \
   $WS/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch
+
+cp $PATCH_ROOT/catkin_ws/src/ego-planner/src/planner/plan_manage/launch/default.rviz \
+  $WS/src/ego-planner/src/planner/plan_manage/launch/default.rviz
 ```
 
 这一步完成后，新的环境脚本和启动脚本就进入工作区了。
@@ -253,11 +258,13 @@ perl -0pi -e 's/\r\n/\n/g' \
   $WS/start_sim_agent.sh \
   $WS/stop_sim.sh \
   $WS/check_env.sh \
+  $WS/guest_gnome_windowctl.py \
   $WS/px4_bridge.py \
   $WS/fix_cloud.py \
   $WS/mission_manager.py \
   $WS/obstacle_manager.py \
-  $WS/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch
+  $WS/src/ego-planner/src/planner/plan_manage/launch/px4_single.launch \
+  $WS/src/ego-planner/src/planner/plan_manage/launch/default.rviz
 ```
 
 如果你复制了 tracking 脚本，也一并转掉：
@@ -278,7 +285,8 @@ chmod +x \
   $WS/start_sim.sh \
   $WS/start_sim_agent.sh \
   $WS/stop_sim.sh \
-  $WS/check_env.sh
+  $WS/check_env.sh \
+  $WS/guest_gnome_windowctl.py
 ```
 
 如果你复制了 tracking 脚本，再执行：
@@ -374,6 +382,22 @@ cd $WS
 阶段 4/4: 规划链路已就绪，启动任务管理器并交接控制
 自动起飞保持器已释放，现由 bridge/planner 接管。
 ```
+
+当前 GUI 主链还顺手包含了两个已经验证过的展示修补：
+
+- 自动起飞阶段会再次创建 `~/.cache/px4_auto`
+  - 避免 `auto_takeoff.pid` / `hover_ready.flag` 因目录缺失失败
+- `Gazebo` 和 `RViz` 都起来后，会自动：
+  - 关闭 RViz 的 `ROS 1 End-of-Life` 弹窗
+  - 把 `Gazebo` 摆到左半屏
+  - 把 `RViz` 摆到右半屏
+
+当前补丁包也把 `default.rviz` 一起带上了，所以：
+
+- `RViz` 默认视角会和当前主线一致
+- 当前配置是：
+  - `ThirdPersonFollower`
+  - `Target Frame: base_link`
 
 如果这一层也通过，说明：
 

@@ -34,6 +34,8 @@ pkill -f 'roslaunch ego_planner'
 pkill -f 'roslaunch px4'
 pkill -f rviz
 pkill -f codex_auto_takeoff_hold
+pkill -f tracking_test_runner.py
+pkill -f tracking_analysis.py
 
 if [ -f "$AUTO_PID_FILE" ]; then
   pid="$(cat "$AUTO_PID_FILE" 2>/dev/null)"
